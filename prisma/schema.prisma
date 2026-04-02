@@ -1,0 +1,238 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  weeklyPlans   WeeklyPlan[]
+  dailyPlans    DailyPlan[]
+  tasks         Task[]
+  evaluations   Evaluation[]
+  streak        Streak?
+  rewards       Reward[]
+  dailyScores   DailyScore[]
+  weeklyReviews WeeklyReview[]
+  meta          UserMeta?
+
+  @@map("users")
+}
+
+enum WeeklyPlanStatus {
+  draft
+  active
+  completed
+}
+
+model WeeklyPlan {
+  id           String           @id @default(uuid())
+  userId       String           @map("user_id")
+  weekStart    DateTime         @map("week_start") @db.Date
+  weekEnd      DateTime         @map("week_end") @db.Date
+  goals        Json             // string[]
+  pendingTasks Json             @map("pending_tasks") // {title, estimatedMinutes, priority, category}[]
+  aiPlan       Json?            @map("ai_plan")        // full AI-generated plan
+  status       WeeklyPlanStatus @default(draft)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyPlans   DailyPlan[]
+  tasks        Task[]
+  weeklyReview WeeklyReview?
+
+  @@index([userId, weekStart])
+  @@map("weekly_plans")
+}
+
+enum DailyPlanStatus {
+  pending
+  active
+  completed
+  evaluated
+}
+
+model DailyPlan {
+  id                     String          @id @default(uuid())
+  weeklyPlanId           String          @map("weekly_plan_id")
+  userId                 String          @map("user_id")
+  planDate               DateTime        @map("plan_date") @db.Date
+  dayIndex               Int             @map("day_index") // 0=Mon, 6=Sun
+  aiReasoning            String?         @map("ai_reasoning") @db.Text
+  totalMinutesAllocated  Int             @default(0) @map("total_minutes_allocated")
+  status                 DailyPlanStatus @default(pending)
+  createdAt              DateTime        @default(now()) @map("created_at")
+
+  weeklyPlan  WeeklyPlan   @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  evaluation  Evaluation?
+  dailyScore  DailyScore?
+
+  @@index([userId, planDate])
+  @@map("daily_plans")
+}
+
+enum TaskCategory {
+  output
+  sales
+  improvement
+}
+
+enum TaskPriority {
+  high
+  medium
+  low
+}
+
+enum TaskStatus {
+  pending
+  in_progress
+  completed
+  missed
+  postponed
+}
+
+model Task {
+  id                 String       @id @default(uuid())
+  userId             String       @map("user_id")
+  weeklyPlanId       String       @map("weekly_plan_id")
+  dailyPlanId        String       @map("daily_plan_id")
+  title              String       @db.VarChar(255)
+  description        String?      @db.Text
+  category           TaskCategory
+  estimatedMinutes   Int          @map("estimated_minutes")
+  priority           TaskPriority @default(medium)
+  status             TaskStatus   @default(pending)
+  proofText          String?      @map("proof_text") @db.Text
+  proofUrl           String?      @map("proof_url") @db.VarChar(500)
+  startedAt          DateTime?    @map("started_at")
+  completedAt        DateTime?    @map("completed_at")
+  timeSpentMinutes   Int          @default(0) @map("time_spent_minutes")
+  carryForwardCount  Int          @default(0) @map("carry_forward_count")
+  penaltyWeight      Float        @default(1.0) @map("penalty_weight")
+  originalDailyPlanId String?     @map("original_daily_plan_id")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeklyPlan  WeeklyPlan @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
+  dailyPlan   DailyPlan  @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dailyPlanId])
+  @@index([dailyPlanId, status])
+  @@map("tasks")
+}
+
+model DailyScore {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  dailyPlanId      String   @unique @map("daily_plan_id")
+  scoreDate        DateTime @map("score_date") @db.Date
+  rawScore         Int      @map("raw_score")           // 0-100
+  completionPct    Int      @map("completion_pct")      // 0-100
+  proofBonus       Int      @default(0) @map("proof_bonus")
+  priorityBonus    Int      @default(0) @map("priority_bonus")
+  penaltyDeduction Int      @default(0) @map("penalty_deduction")
+  grade            String   @db.VarChar(2)              // A/B/C/F
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyPlan DailyPlan @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scoreDate])
+  @@map("daily_scores")
+}
+
+model WeeklyReview {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  weeklyPlanId  String   @unique @map("weekly_plan_id")
+  weekStart     DateTime @map("week_start") @db.Date
+  weeklyScore   Int      @map("weekly_score")           // avg of daily scores
+  grade         String   @db.VarChar(2)
+  whatWorked    String   @map("what_worked") @db.Text
+  whatFailed    String   @map("what_failed") @db.Text
+  whatToImprove String   @map("what_to_improve") @db.Text
+  aiSummary     String   @map("ai_summary") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeklyPlan WeeklyPlan @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
+
+  @@index([userId, weekStart])
+  @@map("weekly_reviews")
+}
+
+model UserMeta {
+  id             String    @id @default(uuid())
+  userId         String    @unique @map("user_id")
+  lastActiveAt   DateTime? @map("last_active_at")
+  focusModeOn    Boolean   @default(false) @map("focus_mode_on")
+  aiCommandToday String?   @map("ai_command_today") @db.Text
+  aiCommandDate  DateTime? @map("ai_command_date") @db.Date
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_meta")
+}
+
+model Evaluation {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  dailyPlanId         String   @unique @map("daily_plan_id")
+  evalDate            DateTime @map("eval_date") @db.Date
+  userNotes           String?  @map("user_notes") @db.Text
+  aiEvaluation        String   @map("ai_evaluation") @db.Text
+  performanceScore    Int      @map("performance_score") // 0-100
+  nextDayAdjustments  Json?    @map("next_day_adjustments")
+  penaltiesApplied    Json?    @map("penalties_applied")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyPlan  DailyPlan @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+
+  @@index([userId, evalDate])
+  @@map("evaluations")
+}
+
+model Streak {
+  id                 String    @id @default(uuid())
+  userId             String    @unique @map("user_id")
+  currentStreak      Int       @default(0) @map("current_streak")
+  longestStreak      Int       @default(0) @map("longest_streak")
+  lastEvaluatedDate  DateTime? @map("last_evaluated_date") @db.Date
+  totalCompletedDays Int       @default(0) @map("total_completed_days")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("streaks")
+}
+
+model Reward {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  name          String    @db.VarChar(100)
+  description   String?   @db.Text
+  targetStreak  Int       @map("target_streak")
+  isUnlocked    Boolean   @default(false) @map("is_unlocked")
+  unlockedAt    DateTime? @map("unlocked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isUnlocked])
+  @@map("rewards")
+}
