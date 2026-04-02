@@ -61,7 +61,16 @@ export async function getAuthUser(): Promise<JWTPayload | null> {
 }
 
 export async function getAuthUserFromRequest(req: NextRequest): Promise<JWTPayload | null> {
-  const token = req.cookies.get(COOKIE_NAME)?.value
-  if (!token) return null
-  return verifyToken(token)
+  // 1. Try cookie (web)
+  const cookieToken = req.cookies.get(COOKIE_NAME)?.value
+  if (cookieToken) return verifyToken(cookieToken)
+
+  // 2. Try Authorization: Bearer (mobile)
+  const authHeader = req.headers.get('authorization')
+  if (authHeader?.startsWith('Bearer ')) {
+    const bearerToken = authHeader.slice(7)
+    if (bearerToken) return verifyToken(bearerToken)
+  }
+
+  return null
 }
