@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Flame, CheckCircle2, Clock, ChevronRight,
-  CalendarDays, Sparkles, Target, LogOut,
+  Flame, CheckCircle2, Clock, ChevronRight, AlertTriangle,
+  CalendarDays, Sparkles, Target, LogOut, Settings,
 } from 'lucide-react'
 
 interface Task {
@@ -27,11 +27,19 @@ interface DashboardData {
     totalMinutesAllocated: number
     evaluation: { performanceScore: number } | null
   } | null
-  todayStats: { completed: number; total: number; minutesUsed: number } | null
+  todayStats: {
+    totalTasks: number
+    completedTasks: number
+    missedTasks: number
+    totalMinutes: number
+    completedMinutes: number
+    isEvaluated: boolean
+    overloaded: boolean
+  } | null
   streak: { currentStreak: number; longestStreak: number; totalCompletedDays: number } | null
   rewards: Array<{ id: string; name: string; targetStreak: number; isUnlocked: boolean }>
-  weeklyStats: { totalTasks: number; completed: number; completionPct: number } | null
-  scoreHistory: Array<{ scoreDate: string; rawScore: number; grade: string }>
+  weeklyStats: { totalTasks: number; completedTasks: number; avgScore: number } | null
+  scoreHistory: Array<{ evalDate: string; performanceScore: number }>
 }
 
 const stagger = {
@@ -50,6 +58,12 @@ export default function MobileDashboard() {
   const [loading, setLoading] = useState(true)
   const [username, setUsername] = useState('')
 
+  // Plan-first AI flow
+  const [showPlanInput, setShowPlanInput] = useState(false)
+  const [userPlan, setUserPlan] = useState('')
+  const [aiAnalysis, setAiAnalysis] = useState<{ analysis: string; command: string; warnings: string[]; planScore: number } | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
   useEffect(() => {
     Promise.all([
       fetch('/api/dashboard').then(r => r.json()),
@@ -57,11 +71,29 @@ export default function MobileDashboard() {
       fetch('/api/auth/me').then(r => r.json()).catch(() => null),
     ]).then(([d, c, me]) => {
       setData(d)
-      setAiCommand(c?.command || null)
+      if (c?.command && c?.cached) setAiCommand(c.command)
       setUsername(me?.username || '')
       setLoading(false)
     })
   }, [])
+
+  async function submitPlan() {
+    if (userPlan.trim().length < 10) return
+    setAiLoading(true)
+    try {
+      const res = await fetch('/api/ai/plan-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userPlan: userPlan.trim() }),
+      })
+      const json = await res.json()
+      if (res.ok) {
+        setAiAnalysis(json)
+        setAiCommand(json.command)
+        setShowPlanInput(false)
+      }
+    } finally { setAiLoading(false) }
+  }
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -83,8 +115,9 @@ export default function MobileDashboard() {
   const streak = data?.streak
   const stats = data?.todayStats
   const tasks = data?.todayPlan?.tasks || []
-  const completedCount = stats?.completed ?? 0
-  const totalCount = stats?.total ?? tasks.length
+  const completedCount = stats?.completedTasks ?? 0
+  const totalCount = stats?.totalTasks ?? tasks.length
+  const minutesUsed = stats?.completedMinutes ?? 0
   const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
 
@@ -96,21 +129,114 @@ export default function MobileDashboard() {
           <p className="text-[var(--ml-text-muted)] text-sm font-medium">{format(new Date(), 'EEEE, MMM d')}</p>
           <h1 className="text-2xl font-bold text-[var(--ml-text)] mt-1">{greeting}{username ? `, ${username}` : ''}</h1>
         </div>
-        <motion.button whileTap={{ scale: 0.85 }} onClick={logout} className="mt-1 p-2.5 rounded-xl bg-[var(--ml-surface)] border border-[var(--ml-border-light)]">
-          <LogOut className="h-4 w-4 text-[var(--ml-text-muted)]" />
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <Link href="/m/settings">
+            <motion.div whileTap={{ scale: 0.85 }} className="p-2.5 rounded-xl bg-[var(--ml-surface)] border border-[var(--ml-border-light)]">
+              <Settings className="h-4 w-4 text-[var(--ml-text-muted)]" />
+            </motion.div>
+          </Link>
+          <motion.button whileTap={{ scale: 0.85 }} onClick={logout} className="p-2.5 rounded-xl bg-[var(--ml-surface)] border border-[var(--ml-border-light)]">
+            <LogOut className="h-4 w-4 text-[var(--ml-text-muted)]" />
+          </motion.button>
+        </div>
       </motion.div>
 
-      {/* AI Command */}
-      {aiCommand && (
+      {/* AI Plan & Command */}
+      {aiAnalysis ? (
+        <motion.div variants={fadeUp} className="mb-6">
+          {/* Analysis */}
+          <div className="p-4 rounded-2xl bg-[var(--ml-primary-bg)] border border-[var(--ml-primary)]/10 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-[var(--ml-primary)]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ml-primary)]">AI Analysis</span>
+              </div>
+              <span className="text-xs font-bold text-[var(--ml-primary)]">{aiAnalysis.planScore}/10</span>
+            </div>
+            <p className="text-sm text-[var(--ml-text-secondary)] leading-relaxed">{aiAnalysis.analysis}</p>
+            {aiAnalysis.warnings.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {aiAnalysis.warnings.map((w, i) => (
+                  <p key={i} className="text-xs text-amber-600 flex items-start gap-1"><AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />{w}</p>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Command */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-[var(--ml-primary)] to-[#5B4BD5] shadow-lg shadow-[var(--ml-primary)]/20">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="h-4 w-4 text-white/80" />
+              <span className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">Your Command</span>
+            </div>
+            <p className="text-white text-[15px] font-medium leading-relaxed">{aiCommand}</p>
+          </div>
+          <button onClick={() => { setAiAnalysis(null); setShowPlanInput(true); setUserPlan('') }} className="mt-2 w-full text-center text-xs text-[var(--ml-text-muted)] font-medium py-2">
+            Write a new plan
+          </button>
+        </motion.div>
+      ) : aiCommand && !showPlanInput ? (
         <motion.div variants={fadeUp} className="mb-6 p-5 rounded-2xl bg-gradient-to-br from-[var(--ml-primary)] to-[#5B4BD5] shadow-lg shadow-[var(--ml-primary)]/20">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="h-4 w-4 text-white/80" />
             <span className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">Today&apos;s Command</span>
           </div>
           <p className="text-white text-[15px] font-medium leading-relaxed">{aiCommand}</p>
+          <button onClick={() => setShowPlanInput(true)} className="mt-3 text-white/60 text-xs font-medium">Update with new plan →</button>
         </motion.div>
-      )}
+      ) : tasks.length > 0 && !showPlanInput ? (
+        <motion.div variants={fadeUp} className="mb-6">
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => setShowPlanInput(true)}
+            className="w-full p-5 rounded-2xl bg-gradient-to-br from-[var(--ml-primary)] to-[#5B4BD5] shadow-lg shadow-[var(--ml-primary)]/20 text-left"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="h-4 w-4 text-white/80" />
+              <span className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">Before You Start</span>
+            </div>
+            <p className="text-white text-[15px] font-medium">Write your plan &amp; roadmap for today →</p>
+            <p className="text-white/60 text-xs mt-1">AI will analyze and give you a personalized command</p>
+          </motion.button>
+        </motion.div>
+      ) : null}
+
+      {/* Plan Input Form */}
+      <AnimatePresence>
+        {showPlanInput && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="mb-6 p-5 rounded-2xl bg-[var(--ml-surface)] border border-[var(--ml-border-light)]"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="h-4 w-4 text-[var(--ml-primary)]" />
+              <span className="text-sm font-semibold text-[var(--ml-text)]">What&apos;s your plan for today?</span>
+            </div>
+            <p className="text-xs text-[var(--ml-text-muted)] mb-3">Describe your roadmap, approach, and priorities. AI will analyze and generate a command.</p>
+            <textarea
+              value={userPlan}
+              onChange={e => setUserPlan(e.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder="e.g. First I'll call top 5 leads to push for closes. Then spend 30min on the landing page copy. After that, review and adjust my sales pipeline..."
+              className="w-full px-4 py-3 rounded-xl bg-white border border-[var(--ml-border-light)] text-sm text-[var(--ml-text)] placeholder:text-[var(--ml-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--ml-primary)]/30 resize-none"
+            />
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[10px] text-[var(--ml-text-muted)]">{userPlan.length}/2000</span>
+              <div className="flex gap-2">
+                <button onClick={() => setShowPlanInput(false)} className="px-4 py-2 text-xs text-[var(--ml-text-muted)] font-medium">Cancel</button>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={submitPlan}
+                  disabled={aiLoading || userPlan.trim().length < 10}
+                  className="px-5 py-2 bg-[var(--ml-primary)] text-white text-xs font-bold rounded-xl disabled:opacity-40"
+                >
+                  {aiLoading ? 'Analyzing...' : 'Get AI Command'}
+                </motion.button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Stats Row */}
       <motion.div variants={fadeUp} className="grid grid-cols-3 gap-3 mb-6">
@@ -126,7 +252,7 @@ export default function MobileDashboard() {
         </div>
         <div className="p-4 rounded-2xl bg-[var(--ml-primary-bg)] flex flex-col items-center gap-1">
           <Clock className="h-5 w-5 text-[var(--ml-primary)]" />
-          <span className="text-xl font-bold text-[var(--ml-primary)]">{stats?.minutesUsed ?? 0}</span>
+          <span className="text-xl font-bold text-[var(--ml-primary)]">{minutesUsed}</span>
           <span className="text-[11px] text-[var(--ml-text-muted)] font-medium">min used</span>
         </div>
       </motion.div>
@@ -157,9 +283,9 @@ export default function MobileDashboard() {
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ml-text-muted)]">This Week</span>
           </div>
           <div className="flex items-baseline gap-1 mt-2">
-            <span className="text-2xl font-bold text-[var(--ml-text)]">{data.weeklyStats.completed}</span>
+            <span className="text-2xl font-bold text-[var(--ml-text)]">{data.weeklyStats.completedTasks}</span>
             <span className="text-sm text-[var(--ml-text-secondary)]">/ {data.weeklyStats.totalTasks} tasks</span>
-            <span className="ml-auto text-sm font-semibold text-[var(--ml-primary)]">{data.weeklyStats.completionPct}%</span>
+            <span className="ml-auto text-sm font-semibold text-[var(--ml-primary)]">{data.weeklyStats.totalTasks > 0 ? Math.round((data.weeklyStats.completedTasks / data.weeklyStats.totalTasks) * 100) : 0}%</span>
           </div>
         </motion.div>
       )}
