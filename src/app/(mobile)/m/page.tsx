@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Flame, CheckCircle2, Clock, ChevronRight, AlertTriangle,
-  CalendarDays, Sparkles, Target, LogOut, Settings,
+  CalendarDays, Sparkles, Target, LogOut, Settings, Shield,
 } from 'lucide-react'
 
 interface Task {
@@ -64,15 +64,20 @@ export default function MobileDashboard() {
   const [aiAnalysis, setAiAnalysis] = useState<{ analysis: string; command: string; warnings: string[]; planScore: number } | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
 
+  // Discipline score
+  const [discipline, setDiscipline] = useState<{ discipline: number; breakdown: { streak: number; taskCompletion: number; evalAvg: number; consistency: number } } | null>(null)
+
   useEffect(() => {
     Promise.all([
       fetch('/api/dashboard').then(r => r.json()),
       fetch('/api/ai/command').then(r => r.json()).catch(() => null),
       fetch('/api/auth/me').then(r => r.json()).catch(() => null),
-    ]).then(([d, c, me]) => {
+      fetch('/api/discipline').then(r => r.json()).catch(() => null),
+    ]).then(([d, c, me, disc]) => {
       setData(d)
       if (c?.command && c?.cached) setAiCommand(c.command)
       setUsername(me?.username || '')
+      if (disc?.discipline != null) setDiscipline(disc)
       setLoading(false)
     })
   }, [])
@@ -237,6 +242,62 @@ export default function MobileDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Discipline Score */}
+      {discipline && (
+        <motion.div variants={fadeUp} className="mb-6 p-5 rounded-2xl bg-[var(--ml-surface)] border border-[var(--ml-border-light)]">
+          <div className="flex items-center gap-4">
+            {/* Animated ring */}
+            <div className="relative w-20 h-20 shrink-0">
+              <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="34" fill="none" stroke="var(--ml-border-light)" strokeWidth="6" />
+                <motion.circle
+                  cx="40" cy="40" r="34" fill="none"
+                  stroke={discipline.discipline >= 70 ? 'var(--ml-success)' : discipline.discipline >= 40 ? 'var(--ml-primary)' : 'var(--ml-danger)'}
+                  strokeWidth="6" strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 34}`}
+                  initial={{ strokeDashoffset: 2 * Math.PI * 34 }}
+                  animate={{ strokeDashoffset: 2 * Math.PI * 34 * (1 - discipline.discipline / 100) }}
+                  transition={{ duration: 1.2, ease: 'easeOut', delay: 0.3 }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-lg font-bold ${
+                  discipline.discipline >= 70 ? 'text-[var(--ml-success)]' : discipline.discipline >= 40 ? 'text-[var(--ml-primary)]' : 'text-[var(--ml-danger)]'
+                }`}>{discipline.discipline}%</span>
+              </div>
+            </div>
+            {/* Details */}
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="h-4 w-4 text-[var(--ml-text-muted)]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ml-text-muted)]">Discipline Score</span>
+              </div>
+              <p className="text-xs text-[var(--ml-text-secondary)] mb-2">
+                {discipline.discipline >= 80 ? 'Machine mode. Keep dominating.' : discipline.discipline >= 60 ? 'Solid. Push harder.' : discipline.discipline >= 40 ? 'Mid. You can do better.' : 'Wake up. You\'re slacking.'}
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--ml-text-muted)]">Streak</span>
+                  <span className="text-[10px] font-bold text-[var(--ml-text)]">{discipline.breakdown.streak}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--ml-text-muted)]">Tasks</span>
+                  <span className="text-[10px] font-bold text-[var(--ml-text)]">{discipline.breakdown.taskCompletion}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--ml-text-muted)]">AI Eval</span>
+                  <span className="text-[10px] font-bold text-[var(--ml-text)]">{discipline.breakdown.evalAvg}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--ml-text-muted)]">Consistency</span>
+                  <span className="text-[10px] font-bold text-[var(--ml-text)]">{discipline.breakdown.consistency}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Stats Row */}
       <motion.div variants={fadeUp} className="grid grid-cols-3 gap-3 mb-6">
