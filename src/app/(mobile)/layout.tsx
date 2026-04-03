@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import '../globals.css'
 import BottomNav from '@/components/mobile/BottomNav'
 
+
 const inter = Inter({ subsets: ['latin'], display: 'swap', preload: false })
 
 export const metadata: Metadata = {
