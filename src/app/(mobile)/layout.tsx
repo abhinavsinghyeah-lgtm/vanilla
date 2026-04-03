@@ -23,6 +23,7 @@ export const viewport: Viewport = {
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="mobile-light min-h-screen" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+      <link rel="apple-touch-icon" href="/icon-192.png" />
       <script
         dangerouslySetInnerHTML={{
           __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}`,
