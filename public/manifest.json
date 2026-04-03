@@ -1,0 +1,22 @@
+{
+  "name": "Vanilla",
+  "short_name": "Vanilla",
+  "description": "AI Productivity System",
+  "start_url": "/m",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#6C5CE7",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

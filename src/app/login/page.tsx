@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -29,7 +31,9 @@ export default function LoginPage() {
         return
       }
 
-      router.push('/dashboard')
+      const from = searchParams.get('from')
+      const redirectTo = from && from.startsWith('/') ? from : '/dashboard'
+      router.push(redirectTo)
       router.refresh()
     } catch {
       setError('Network error. Please try again.')
@@ -112,5 +116,17 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[hsl(224,71%,4%)] flex items-center justify-center">
+        <div className="text-zinc-500 text-sm">Loading...</div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

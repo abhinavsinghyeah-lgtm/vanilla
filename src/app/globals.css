@@ -66,3 +66,47 @@
     background-clip: text;
   }
 }
+
+/* ── Mobile Light Theme ─────────────────────────── */
+.mobile-light {
+  --ml-bg: #FFFFFF;
+  --ml-surface: #F8F9FB;
+  --ml-surface-alt: #F1F3F5;
+  --ml-card: #FFFFFF;
+  --ml-text: #1A1A2E;
+  --ml-text-secondary: #6B7280;
+  --ml-text-muted: #9CA3AF;
+  --ml-primary: #6C5CE7;
+  --ml-primary-light: #A29BFE;
+  --ml-primary-bg: #F0EEFF;
+  --ml-success: #00B894;
+  --ml-success-bg: #E6F9F3;
+  --ml-warning: #FDCB6E;
+  --ml-warning-bg: #FFF8E7;
+  --ml-danger: #FF6B6B;
+  --ml-danger-bg: #FFE8E8;
+  --ml-border: #E5E7EB;
+  --ml-border-light: #F3F4F6;
+
+  background: var(--ml-bg) !important;
+  color: var(--ml-text) !important;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.mobile-light * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth scrolling for mobile */
+.mobile-light .m-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Prevent pull-to-refresh in standalone PWA */
+@media (display-mode: standalone) {
+  .mobile-light {
+    overscroll-behavior-y: contain;
+  }
+}
