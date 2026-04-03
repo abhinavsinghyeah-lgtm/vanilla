@@ -15,7 +15,9 @@ export interface WeeklyPlanInput {
     priority: 'high' | 'medium' | 'low'
     category: 'output' | 'sales' | 'improvement'
   }>
-  weekStart: string  // ISO date string (Monday)
+  weekStart: string  // ISO date string (start day)
+  numDays: number    // how many days to plan (1-7)
+  dayNames: string[] // e.g. ['Friday','Saturday','Sunday']
 }
 
 export interface DayAllocation {
@@ -40,15 +42,17 @@ export interface WeeklyPlanOutput {
 }
 
 export async function generateWeeklyPlan(input: WeeklyPlanInput): Promise<WeeklyPlanOutput> {
+  const daysList = input.dayNames.join(', ')
   const prompt = `You are a strict personal productivity AI for a high-performance individual.
 
-Generate a structured weekly execution plan based on the following inputs.
+Generate a structured execution plan based on the following inputs.
 
 CRITICAL CONSTRAINT: Maximum 2 hours (120 minutes) of work per day. NEVER exceed this.
 
-WEEK STARTING: ${input.weekStart}
+PLAN STARTS: ${input.weekStart}
+DAYS TO PLAN: ${input.numDays} days (${daysList})
 
-GOALS THIS WEEK:
+GOALS:
 ${input.goals.map((g, i) => `${i + 1}. ${g}`).join('\n')}
 
 PENDING TASKS:
@@ -57,12 +61,13 @@ ${input.pendingTasks.map((t, i) =>
 ).join('\n')}
 
 INSTRUCTIONS:
-- Allocate tasks across Mon–Sun, never exceeding 120 min/day
+- Allocate tasks across EXACTLY these ${input.numDays} days: ${daysList}, never exceeding 120 min/day
 - Prioritize HIGH priority tasks first
 - Balance categories: mix Output, Sales, Improvement tasks across days
-- If total task time exceeds 7 days × 120 min, note unscheduled tasks
+- If total task time exceeds ${input.numDays} days × 120 min, note unscheduled tasks
 - Provide brief tactical reasoning for each day's selection
-- Generate 5 working days (Mon–Fri); Sat/Sun are optional rest days unless task load requires it
+- Tasks can be as short as 5 minutes — do NOT pad or inflate times
+- Generate plans for ALL ${input.numDays} days: ${daysList}
 
 Respond ONLY with valid JSON matching this exact structure:
 {

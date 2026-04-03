@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import {
   CheckCircle2, XCircle, Play, Pause, Clock,
-  AlertTriangle, Loader2, Sparkles, ArrowRight,
+  AlertTriangle, Loader2, Sparkles, ArrowRight, Check,
 } from 'lucide-react'
 
 interface Task {
@@ -55,6 +55,11 @@ export default function MobileDailyPage() {
   const [evalResult, setEvalResult] = useState<EvalResult | null>(null)
   const [elapsed, setElapsed] = useState(0)
 
+  // Manual completion modal
+  const [manualTask, setManualTask] = useState<Task | null>(null)
+  const [manualTimeMode, setManualTimeMode] = useState<'allocated' | 'less' | 'more'>('allocated')
+  const [manualMinutes, setManualMinutes] = useState(0)
+
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/daily-plan')
@@ -88,6 +93,28 @@ export default function MobileDailyPage() {
       await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
       await load()
     } finally { setActing(null) }
+  }
+
+  async function completeManual() {
+    if (!manualTask) return
+    const timeSpent = manualTimeMode === 'allocated' ? manualTask.estimatedMinutes
+      : manualMinutes
+    setActing(manualTask.id)
+    try {
+      await fetch(`/api/task/${manualTask.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeSpentMinutes: Math.max(timeSpent, 1) }),
+      })
+      setManualTask(null)
+      await load()
+    } finally { setActing(null) }
+  }
+
+  function openManualComplete(task: Task) {
+    setManualTask(task)
+    setManualTimeMode('allocated')
+    setManualMinutes(task.estimatedMinutes)
   }
 
   async function evaluateDay() {
@@ -284,14 +311,23 @@ export default function MobileDailyPage() {
 
                 {/* Actions */}
                 {task.status === 'pending' && !activeTask && (
-                  <motion.button
-                    whileTap={{ scale: 0.94 }}
-                    onClick={() => act(task.id, 'start')}
-                    disabled={acting === task.id}
-                    className="mt-3 w-full flex items-center justify-center gap-2 bg-[var(--ml-primary)] text-white text-sm font-semibold py-2.5 rounded-xl disabled:opacity-50"
-                  >
-                    {acting === task.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4" /> Start Task</>}
-                  </motion.button>
+                  <div className="mt-3 flex gap-2">
+                    <motion.button
+                      whileTap={{ scale: 0.94 }}
+                      onClick={() => act(task.id, 'start')}
+                      disabled={acting === task.id}
+                      className="flex-1 flex items-center justify-center gap-2 bg-[var(--ml-primary)] text-white text-sm font-semibold py-2.5 rounded-xl disabled:opacity-50"
+                    >
+                      {acting === task.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4" /> Start</>}
+                    </motion.button>
+                    <motion.button
+                      whileTap={{ scale: 0.94 }}
+                      onClick={() => openManualComplete(task)}
+                      className="flex items-center justify-center gap-1.5 bg-[var(--ml-success)] text-white text-sm font-semibold px-4 py-2.5 rounded-xl"
+                    >
+                      <Check className="h-4 w-4" /> Done
+                    </motion.button>
+                  </div>
                 )}
                 {task.status === 'pending' && activeTask && (
                   <p className="mt-2 text-[11px] text-[var(--ml-text-muted)] italic">Complete the active task first</p>
@@ -301,6 +337,74 @@ export default function MobileDailyPage() {
           </AnimatePresence>
         </div>
       </motion.div>
+
+      {/* Manual Complete Modal */}
+      <AnimatePresence>
+        {manualTask && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm"
+            onClick={() => setManualTask(null)}
+          >
+            <motion.div
+              initial={{ y: 300 }} animate={{ y: 0 }} exit={{ y: 300 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-lg bg-white rounded-t-3xl p-6 pb-10"
+            >
+              <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+              <h3 className="text-base font-bold text-[var(--ml-text)] mb-1">Complete: {manualTask.title}</h3>
+              <p className="text-xs text-[var(--ml-text-muted)] mb-4">Allocated: {manualTask.estimatedMinutes}m — How much time did you actually use?</p>
+
+              <div className="flex gap-2 mb-4">
+                {(['allocated', 'less', 'more'] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setManualTimeMode(m)
+                      if (m === 'allocated') setManualMinutes(manualTask.estimatedMinutes)
+                      else if (m === 'less') setManualMinutes(Math.round(manualTask.estimatedMinutes / 2))
+                      else setManualMinutes(manualTask.estimatedMinutes + 15)
+                    }}
+                    className={`flex-1 py-2.5 text-xs font-semibold rounded-xl border transition-colors ${
+                      manualTimeMode === m
+                        ? 'bg-[var(--ml-primary)] text-white border-[var(--ml-primary)]'
+                        : 'bg-[var(--ml-surface)] text-[var(--ml-text)] border-[var(--ml-border-light)]'
+                    }`}
+                  >
+                    {m === 'allocated' ? `${manualTask.estimatedMinutes}m` : m === 'less' ? 'Less' : 'More'}
+                  </button>
+                ))}
+              </div>
+
+              {manualTimeMode !== 'allocated' && (
+                <div className="mb-4">
+                  <label className="text-[10px] font-semibold uppercase text-[var(--ml-text-muted)] mb-1 block">Actual minutes</label>
+                  <input
+                    type="number"
+                    min={1} max={480}
+                    value={manualMinutes}
+                    onChange={e => setManualMinutes(parseInt(e.target.value) || 0)}
+                    className="w-full px-4 py-3 rounded-xl bg-[var(--ml-surface)] border border-[var(--ml-border-light)] text-sm text-[var(--ml-text)] focus:outline-none focus:ring-2 focus:ring-[var(--ml-primary)]/30"
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => setManualTask(null)} className="flex-1 py-3 text-sm font-medium text-[var(--ml-text-muted)] rounded-xl bg-[var(--ml-surface)]">Cancel</button>
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={completeManual}
+                  disabled={acting === manualTask.id}
+                  className="flex-1 py-3 text-sm font-bold text-white rounded-xl bg-[var(--ml-success)] disabled:opacity-50"
+                >
+                  {acting === manualTask.id ? 'Saving...' : 'Mark Complete'}
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Evaluate Day */}
       {canEvaluate && (

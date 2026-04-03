@@ -61,21 +61,29 @@ export default function MobilePlanPage() {
   const [newTasks, setNewTasks] = useState<NewTask[]>([{ title: '', estimatedMinutes: 30, priority: 'medium', category: 'output' }])
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState('')
+  const [planMode, setPlanMode] = useState<'full_week' | 'rest_of_week'>('full_week')
 
   useEffect(() => {
     fetch('/api/weekly-plan')
       .then(r => r.json())
       .then(d => {
         setPlan(d.plan)
-        // Set selected day to today's index
-        const today = new Date().getDay()
-        setSelectedDay(today === 0 ? 6 : today - 1)
+        // Set selected day to today's day index (0=Mon, 6=Sun)
+        const todayJs = new Date().getDay() // 0=Sun
+        const todayIdx = todayJs === 0 ? 6 : todayJs - 1
+        // If today has data, select it; otherwise select first day with data
+        if (d.plan?.dailyPlans?.find((dp: DailyPlan) => dp.dayIndex === todayIdx)) {
+          setSelectedDay(todayIdx)
+        } else if (d.plan?.dailyPlans?.length > 0) {
+          const sorted = [...d.plan.dailyPlans].sort((a: DailyPlan, b: DailyPlan) => a.dayIndex - b.dayIndex)
+          setSelectedDay(sorted[0].dayIndex)
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  async function generatePlan() {
+  async function generatePlan(isUpdate = false) {
     const validGoals = goals.filter(g => g.trim())
     const validTasks = newTasks.filter(t => t.title.trim())
     if (validGoals.length === 0) { setGenError('Add at least one goal'); return }
@@ -84,16 +92,17 @@ export default function MobilePlanPage() {
     setGenerating(true)
     try {
       const res = await fetch('/api/weekly-plan', {
-        method: 'POST',
+        method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goals: validGoals,
           pendingTasks: validTasks.map(t => ({
             title: t.title.trim(),
-            estimatedMinutes: Math.min(120, Math.max(5, t.estimatedMinutes)),
+            estimatedMinutes: Math.max(1, t.estimatedMinutes),
             priority: t.priority,
             category: t.category,
           })),
+          mode: planMode,
         }),
       })
       const json = await res.json()
@@ -120,8 +129,35 @@ export default function MobilePlanPage() {
     return (
       <motion.div variants={stagger} initial="hidden" animate="show" className="min-h-screen pb-28 px-5 pt-14">
         <motion.div variants={fadeUp} className="mb-6">
-          <h1 className="text-2xl font-bold text-[var(--ml-text)]">Create Weekly Plan</h1>
-          <p className="text-sm text-[var(--ml-text-muted)] mt-1">AI will schedule your tasks across 7 days</p>
+          <h1 className="text-2xl font-bold text-[var(--ml-text)]">{plan ? 'Update Plan' : 'Create Plan'}</h1>
+          <p className="text-sm text-[var(--ml-text-muted)] mt-1">AI will schedule your tasks</p>
+        </motion.div>
+
+        {/* Plan Mode */}
+        <motion.div variants={fadeUp} className="mb-6">
+          <h2 className="text-sm font-semibold text-[var(--ml-text)] uppercase tracking-wider mb-3">Duration</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPlanMode('full_week')}
+              className={`flex-1 py-3 text-sm font-semibold rounded-xl border transition-colors ${
+                planMode === 'full_week'
+                  ? 'bg-[var(--ml-primary)] text-white border-[var(--ml-primary)]'
+                  : 'bg-[var(--ml-surface)] text-[var(--ml-text)] border-[var(--ml-border-light)]'
+              }`}
+            >
+              Full Week (7 days)
+            </button>
+            <button
+              onClick={() => setPlanMode('rest_of_week')}
+              className={`flex-1 py-3 text-sm font-semibold rounded-xl border transition-colors ${
+                planMode === 'rest_of_week'
+                  ? 'bg-[var(--ml-primary)] text-white border-[var(--ml-primary)]'
+                  : 'bg-[var(--ml-surface)] text-[var(--ml-text)] border-[var(--ml-border-light)]'
+              }`}
+            >
+              Till Sunday
+            </button>
+          </div>
         </motion.div>
 
         {/* Goals */}
@@ -183,11 +219,11 @@ export default function MobilePlanPage() {
 
         <motion.button
           whileTap={{ scale: 0.96 }}
-          onClick={generatePlan}
+          onClick={() => generatePlan(!!plan)}
           disabled={generating}
           className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[var(--ml-primary)] to-[#5B4BD5] text-white text-sm font-bold py-4 rounded-2xl shadow-lg shadow-[var(--ml-primary)]/20 disabled:opacity-50"
         >
-          {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Sparkles className="h-5 w-5" /> Generate Plan</>}
+          {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Sparkles className="h-5 w-5" /> {plan ? 'Update Plan' : 'Generate Plan'}</>}
         </motion.button>
 
         {plan && (
@@ -213,9 +249,13 @@ export default function MobilePlanPage() {
             {format(new Date(plan.weekStart), 'MMM d')} — {format(new Date(plan.weekEnd), 'MMM d')}
           </p>
         </div>
-        <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowCreate(true)}
+        <motion.button whileTap={{ scale: 0.92 }} onClick={() => {
+          // Pre-fill form from existing plan
+          if (plan.goals) setGoals([...(plan.goals as string[]), ''])
+          setShowCreate(true)
+        }}
           className="px-3 py-2 bg-[var(--ml-primary-bg)] text-[var(--ml-primary)] text-xs font-semibold rounded-xl">
-          New Plan
+          Update Plan
         </motion.button>
       </motion.div>
 
@@ -341,9 +381,9 @@ function TaskFormCard({ task, index, onChange, onDelete }: { task: NewTask; inde
                   <label className="text-[10px] font-semibold uppercase text-[var(--ml-text-muted)] mb-1 block">Minutes</label>
                   <input
                     type="number"
-                    min={5} max={120}
+                    min={1} max={480}
                     value={task.estimatedMinutes}
-                    onChange={e => onChange({ ...task, estimatedMinutes: parseInt(e.target.value) || 30 })}
+                    onChange={e => onChange({ ...task, estimatedMinutes: parseInt(e.target.value) || 5 })}
                     className="w-full px-3 py-2 rounded-lg bg-[var(--ml-surface)] border border-[var(--ml-border-light)] text-sm text-[var(--ml-text)] focus:outline-none focus:ring-2 focus:ring-[var(--ml-primary)]/30"
                   />
                 </div>
